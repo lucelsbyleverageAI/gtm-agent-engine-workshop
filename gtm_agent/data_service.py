@@ -22,6 +22,42 @@ __all__ = [
 # Built prospect profiles are cached in memory (keyed by prospect_id) so repeat
 # lookups within a run are served without rebuilding.
 _PROFILES = {}
+_SENSITIVE_PROFILE_FIELDS = (
+    "billingqualification",
+    "billingdetails",
+    "payment",
+    "card",
+    "taxid",
+    "dateofbirth",
+    "birthdate",
+    "dob",
+    "creditcheck",
+    "identity",
+    "ssn",
+    "socialsecurity",
+    "passport",
+    "driverlicense",
+    "governmentid",
+    "nationalid",
+    "bankaccount",
+    "routingnumber",
+    "accountnumber",
+)
+
+
+def sanitize_profile_data(value):
+    if isinstance(value, dict):
+        return {
+            key: sanitize_profile_data(item)
+            for key, item in value.items()
+            if not any(
+                sensitive_field in "".join(character.lower() for character in str(key) if character.isalnum())
+                for sensitive_field in _SENSITIVE_PROFILE_FIELDS
+            )
+        }
+    if isinstance(value, list):
+        return [sanitize_profile_data(item) for item in value]
+    return value
 
 # ---------------------------------------------------------------------------
 # Public data-access functions
@@ -63,7 +99,13 @@ def fetch_tech_stack(prospect_id):
 @traceable(run_type="tool", name="get_profile_from_db")
 def get_profile_from_db(prospect_id):
     "Look up a stored prospect profile. Returns {'prospect_profile': record|None}."
-    return {"prospect_profile": _PROFILES.get(prospect_id)}
+    profile = _PROFILES.get(prospect_id)
+    if profile is not None:
+        sanitized = sanitize_profile_data(profile)
+        if sanitized != profile:
+            _PROFILES[prospect_id] = sanitized
+        profile = sanitized
+    return {"prospect_profile": profile}
 
 
 @traceable(run_type="tool", name="save_profile_to_db")
